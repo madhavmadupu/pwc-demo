@@ -1,0 +1,6 @@
+streamlit>=1.30.0
+google-genai>=1.0.0
+google-cloud-aiplatform>=1.29.0
+langgraph>=0.2.0
+PyPDF2>=3.0.0
+python-dotenv>=1.0.0
