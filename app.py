@@ -699,8 +699,11 @@ def main():
 
             if validation.get("checks"):
                 for check in validation["checks"]:
-                    icon = "✅" if check.get("status") == "pass" else "⚠️" if check.get("status") == "warning" else "❌"
-                    st.write(f"{icon} **{check.get('rule', 'N/A')}** — {check.get('details', '')}")
+                    if isinstance(check, dict):
+                        icon = "✅" if check.get("status") == "pass" else "⚠️" if check.get("status") == "warning" else "❌"
+                        st.write(f"{icon} **{check.get('rule', 'N/A')}** — {check.get('details', '')}")
+                    else:
+                        st.write(f"• {check}")
 
             if validation.get("issues"):
                 for issue in validation["issues"]:
