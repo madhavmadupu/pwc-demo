@@ -32,7 +32,7 @@ The system supports **multimodal inputs** — paste text, upload PDFs, or submit
 |---------|-------------|
 | **🤖 4-Agent Pipeline** | Classification → Extraction → Validation → Summarization |
 | **👁️ Multimodal Input** | Text paste, PDF upload, and image upload (Gemini Vision OCR) |
-| **📚 RAG-Powered Validation** | Validates against company SOPs via Vertex AI Vector Search |
+| **📚 RAG-Powered Validation** | Validates against company SOPs via Vertex AI Embeddings + Semantic Search |
 | **🔗 LangGraph Orchestration** | Stateful, deterministic agent workflow with error recovery |
 | **📊 Executive Summaries** | Auto-generated highlights, action items, and risk assessments |
 | **💾 JSON Export** | Download structured processing reports |
@@ -68,10 +68,11 @@ The pipeline follows a sequential multi-agent pattern where each agent enriches 
 └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
                            │                    │
                            ▼                    ▼
-                    ┌──────────────┐    ┌──────────────┐
-                    │  Vertex AI   │    │  Company     │
-                    │ Vector Search│    │  SOPs/Rules  │
-                    └──────────────┘    └──────────────┘
+                    ┌──────────────┐    ┌──────────────────┐
+                    │  Vertex AI   │    │  Vertex AI       │
+                    │  Embeddings  │    │  gemini-embedding│
+                    │  (Semantic)  │    │  -001 (3072 dim) │
+                    └──────────────┘    └──────────────────┘
 ```
 
 ### Agent Breakdown
@@ -182,6 +183,7 @@ pwc-demo/
 ├── requirements.txt        # Python dependencies
 ├── Dockerfile              # Container configuration for Cloud Run
 ├── deploy.sh               # One-click Cloud Run deployment script
+├── setup_vector_db.py      # Vertex AI Vector Search index setup script
 ├── .env                    # Environment variables (git-ignored)
 ├── docs/
 │   ├── architecture.svg    # System architecture diagram
@@ -203,7 +205,7 @@ pwc-demo/
 | **LLM** | [Gemini 2.5 Flash](https://ai.google.dev/gemini-api/docs/models#gemini-2.5-flash) | Multimodal reasoning & structured output |
 | **Vision/OCR** | Gemini Vision (Multimodal) | Image-to-text extraction |
 | **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) | Stateful agent pipeline & workflow |
-| **RAG** | Vertex AI Vector Search | Company rule retrieval |
+| **RAG** | Vertex AI Embeddings (gemini-embedding-001) + Cosine Similarity | Semantic rule retrieval with 3072-dim embeddings |
 | **Frontend** | [Streamlit](https://streamlit.io) | Interactive web UI |
 | **Deployment** | [Google Cloud Run](https://cloud.google.com/run) | Serverless containerized hosting |
 | **Container** | Docker (Python 3.11 slim) | Reproducible builds |

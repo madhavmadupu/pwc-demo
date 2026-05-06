@@ -42,16 +42,16 @@ def get_client():
 client = get_client()
 
 # ============================================================
-# RAG — Company Rules & SOPs (Vector Search)
+# RAG — Company Rules & SOPs (Vertex AI Embeddings + Semantic Search)
 # ============================================================
 COMPANY_RULES = {
     "invoice": [
         "All invoices must have a valid invoice number",
         "Invoice date must not be in the future",
-        "Tax calculation must match: subtotal × tax rate = tax amount",
+        "Tax calculation must match: subtotal x tax rate = tax amount",
         "Line items must sum to subtotal",
         "Payment terms must be specified (Net 15-90 days)",
-        "Bank details are required for payments above ₹50,000",
+        "Bank details are required for payments above 50,000 INR",
         "All amounts must be in positive currency",
         "Vendor name and address are mandatory"
     ],
@@ -67,7 +67,7 @@ COMPANY_RULES = {
     ],
     "report": [
         "Report must have a clear title and period",
-        "Executive summary must be present (>50 chars)",
+        "Executive summary must be present (more than 50 chars)",
         "At least 3 key metrics with values required",
         "Trend indicators (up/down/stable) for each metric",
         "Challenges must be documented",
@@ -79,7 +79,7 @@ COMPANY_RULES = {
         "Must have valid sender and recipient",
         "Subject line must be present and descriptive",
         "Date must be parseable",
-        "Body summary must be coherent (>20 chars)",
+        "Body summary must be coherent (more than 20 chars)",
         "Action items should be clearly identified",
         "Sentiment analysis required",
         "Urgency level must be classified",
@@ -87,7 +87,7 @@ COMPANY_RULES = {
     ]
 }
 
-# Flatten all rules for Vector Search
+# Flatten all rules with metadata for RAG retrieval
 ALL_RULES = []
 for doc_type, rules in COMPANY_RULES.items():
     for rule in rules:
@@ -97,46 +97,88 @@ for doc_type, rules in COMPANY_RULES.items():
             "id": f"{doc_type}_{len(ALL_RULES)}"
         })
 
-def get_relevant_rules(doc_type: str, text: str) -> str:
+# Cache for rule embeddings
+_rule_embeddings_cache = {}
+
+def get_rule_embeddings():
+    """Get or compute embeddings for all company rules."""
+    if _rule_embeddings_cache.get("embeddings"):
+        return _rule_embeddings_cache["embeddings"]
+    
+    texts = [rule["text"] for rule in ALL_RULES]
+    response = client.models.embed_content(
+        model="gemini-embedding-001",
+        contents=texts
+    )
+    embeddings = [emb.values for emb in response.embeddings]
+    _rule_embeddings_cache["embeddings"] = embeddings
+    return embeddings
+
+def cosine_similarity(vec1: list, vec2: list) -> float:
+    """Compute cosine similarity between two vectors."""
+    import math
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    norm1 = math.sqrt(sum(a * a for a in vec1))
+    norm2 = math.sqrt(sum(b * b for b in vec2))
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+    return dot_product / (norm1 * norm2)
+
+@st.cache_resource
+def get_rag_retriever():
+    """Initialize RAG retriever with pre-computed rule embeddings."""
+    embeddings = get_rule_embeddings()
+    return embeddings
+
+def get_relevant_rules(doc_type: str, text: str, top_k: int = 8) -> str:
     """
-    RAG: Retrieve relevant rules.
-    Uses Vertex AI Embeddings + Vector Search when available,
-    falls back to in-memory rules.
+    RAG: Retrieve relevant rules using Vertex AI Embeddings + Semantic Search.
+    
+    This implements the full RAG pattern:
+    1. RETRIEVAL: Generate embedding for the query using Vertex AI gemini-embedding-001
+    2. RANKING: Compute cosine similarity against pre-indexed rule embeddings
+    3. AUGMENT: Return top-k most relevant rules to augment the LLM prompt
+    
+    For production scale, this can be swapped with Vertex AI Vector Search endpoint.
     """
     try:
-        from google.cloud import aiplatform
-        aiplatform.init(project=PROJECT_ID, location=LOCATION)
-        
+        # Step 1: Generate query embedding using Vertex AI
+        query_text = f"{doc_type} document validation: {text[:500]}"
         embed_response = client.models.embed_content(
             model="gemini-embedding-001",
-            contents=f"{doc_type} document validation rules: {text[:500]}"
+            contents=query_text
         )
         query_embedding = embed_response.embeddings[0].values
         
-        index_endpoint_name = os.environ.get("VECTOR_SEARCH_ENDPOINT")
-        deployed_index_id = os.environ.get("DEPLOYED_INDEX_ID")
+        # Step 2: Retrieve pre-computed rule embeddings
+        rule_embeddings = get_rag_retriever()
         
-        if index_endpoint_name and deployed_index_id:
-            index_endpoint = aiplatform.MatchingEngineIndexEndpoint(
-                index_endpoint_name=index_endpoint_name
-            )
-            response = index_endpoint.find_neighbors(
-                deployed_index_id=deployed_index_id,
-                queries=[query_embedding],
-                num_neighbors=10
-            )
-            rules = [neighbor.id for neighbor in response[0]]
-            rules_text = "\n".join([f"  - {rule}" for rule in rules])
-            return f"Relevant Rules (from Vector Search):\n{rules_text}"
-    except Exception:
-        pass
-    
-    doc_type_lower = doc_type.lower()
-    if doc_type_lower not in COMPANY_RULES:
+        # Step 3: Rank by cosine similarity
+        similarities = []
+        for i, rule_emb in enumerate(rule_embeddings):
+            sim = cosine_similarity(query_embedding, rule_emb)
+            similarities.append((i, sim))
+        
+        # Sort by similarity (descending) and take top-k
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        top_indices = similarities[:top_k]
+        
+        # Step 4: Build augmented context with retrieved rules
+        rules_text = f"Retrieved {len(top_indices)} most relevant rules via RAG (Vertex AI Embeddings + Semantic Search):\n"
+        for rank, (idx, sim_score) in enumerate(top_indices):
+            rule = ALL_RULES[idx]
+            rules_text += f"  {rank+1}. [{rule['doc_type']}] {rule['text']} (similarity: {sim_score:.3f})\n"
+        
+        return rules_text
+        
+    except Exception as e:
+        # Fallback to keyword-based retrieval if embeddings fail
+        doc_type_lower = doc_type.lower()
+        if doc_type_lower in COMPANY_RULES:
+            rules = COMPANY_RULES[doc_type_lower]
+            rules_text = "\n".join([f"  {i+1}. {rule}" for i, rule in enumerate(rules)])
+            return f"Company Rules & SOPs for {doc_type} (fallback):\n{rules_text}"
         return "No specific rules found for this document type."
-    rules = COMPANY_RULES[doc_type_lower]
-    rules_text = "\n".join([f"  {i+1}. {rule}" for i, rule in enumerate(rules)])
-    return f"Company Rules & SOPs for {doc_type}:\n{rules_text}"
 
 # ============================================================
 # ROBUST JSON PARSER
@@ -481,7 +523,7 @@ def main():
     with col3:
         st.metric("🔗 Orchestration", "LangGraph")
     with col4:
-        st.metric("📚 RAG", "Vector Search")
+        st.metric("📚 RAG", "Vertex AI Embeddings")
     with col5:
         st.metric("☁️ Deploy", "Cloud Run")
     st.markdown("---")
@@ -502,8 +544,11 @@ def main():
         st.write("  • 📎 Upload PDF")
         st.write("  • 🖼️ Upload Image")
         st.write("---")
-        st.write(f"**RAG Rules:** {len(ALL_RULES)} rules loaded")
-        st.write(f"**Vector Search:** {'✅ Enabled' if os.environ.get('VECTOR_SEARCH_ENDPOINT') else '⚠️ In-Memory'}")
+        st.write("**RAG Architecture:**")
+        st.write("  • Embeddings: gemini-embedding-001")
+        st.write("  • Retrieval: Semantic similarity search")
+        st.write("  • Rules indexed: 32 company SOPs")
+        st.write("  • Top-k retrieval: 8 most relevant rules")
     
     # Input section
     st.header("📝 Input Document")
