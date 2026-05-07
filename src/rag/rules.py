@@ -64,14 +64,17 @@ def flatten_rules() -> List[dict]:
     """
     all_rules: List[dict] = []
     for doc_type, rules in COMPANY_RULES.items():
-        for rule in rules:
+        for i, rule in enumerate(rules):
             all_rules.append({
                 "text": rule,
                 "doc_type": doc_type,
-                "id": f"{doc_type}_{len(all_rules)}",
+                "id": f"{doc_type}_{i}",
             })
     return all_rules
 
 
 # Pre-flattened rules for vector search
 ALL_RULES: List[dict] = flatten_rules()
+
+# ID-to-text mapping for vector search results lookup
+RULE_ID_MAP: dict[str, str] = {r["id"]: r["text"] for r in ALL_RULES}

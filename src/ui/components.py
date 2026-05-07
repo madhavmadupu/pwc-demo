@@ -45,7 +45,8 @@ def render_sidebar() -> None:
         st.write("  • 🖼️ Upload Image")
         st.write("---")
         st.write(f"**RAG Rules:** {len(ALL_RULES)} rules loaded")
-        st.write(f"**Vector Search:** {'✅ Enabled' if False else '⚠️ In-Memory'}")
+        vs_enabled = bool(settings.vector_search_endpoint and settings.deployed_index_id)
+        st.write(f"**Vector Search:** {'✅ Enabled' if vs_enabled else '⚠️ In-Memory'}")
 
 
 def render_classification(result: dict) -> None:

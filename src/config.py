@@ -7,6 +7,9 @@ All environment variables and constants are defined here.
 
 import os
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 @dataclass(frozen=True)

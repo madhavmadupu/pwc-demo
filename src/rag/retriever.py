@@ -12,7 +12,7 @@ from typing import List
 import streamlit as st
 
 from src.config import settings
-from src.rag.rules import COMPANY_RULES
+from src.rag.rules import COMPANY_RULES, RULE_ID_MAP
 from src.rag.embeddings import get_client, compute_embedding
 
 
@@ -97,7 +97,11 @@ def get_relevant_rules(doc_type: str, text: str) -> str:
                 queries=[query_embedding],
                 num_neighbors=10,
             )
-            rules = [neighbor.id for neighbor in response[0]]
+            rules = [
+                RULE_ID_MAP.get(neighbor.id, neighbor.id)
+                for neighbor in response[0]
+                if neighbor.id in RULE_ID_MAP
+            ]
             rules_text = "\n".join([f"  - {rule}" for rule in rules])
             return f"Relevant Rules (from Vector Search):\n{rules_text}"
     except Exception:
