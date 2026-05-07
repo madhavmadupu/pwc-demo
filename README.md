@@ -13,7 +13,7 @@
 ## 🏗️ Architecture
 
 <p align="center">
-  <img src="docs/architecture.svg" alt="System Architecture Diagram" width="100%"/>
+  <img src="docs/agentic_document_processing_architecture.svg" alt="System Architecture Diagram" width="100%"/>
 </p>
 
 <details>
