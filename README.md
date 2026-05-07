@@ -12,6 +12,13 @@
 
 ## 🏗️ Architecture
 
+<p align="center">
+  <img src="docs/architecture.svg" alt="System Architecture Diagram" width="100%"/>
+</p>
+
+<details>
+<summary>Text-based architecture (click to expand)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Streamlit UI                             │
@@ -38,6 +45,8 @@
 │     (Text Embeddings · Vector Search · Vision API)          │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ## ✨ Features
 
