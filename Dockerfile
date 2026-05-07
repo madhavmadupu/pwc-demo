@@ -11,7 +11,7 @@ FROM python:3.11-slim AS production
 # Install curl for health check
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
-LABEL maintainer="Citta AI <team@citta.ai>"
+LABEL maintainer=""
 LABEL description="PwC Agentic Document Processing System"
 
 # Security: non-root user
