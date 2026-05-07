@@ -20,14 +20,6 @@ class ClassificationAgent(BaseAgent):
         super().__init__("Classification")
 
     def execute(self, state: dict) -> dict:
-        """Classify the document text.
-
-        Args:
-            state: Pipeline state with 'text' key.
-
-        Returns:
-            Updated state with 'doc_type', 'confidence', 'reasoning', and 'pipeline_status'.
-        """
         text = state["text"]
         if not text.strip():
             raise ValueError("Empty document text provided")
@@ -37,6 +29,8 @@ class ClassificationAgent(BaseAgent):
         prompt = f"""You are a document classification expert.
 Classify this document into exactly ONE category: Invoice, Contract, Report, Email, Unknown.
 Return JSON with keys: type, confidence, reasoning.
+
+IMPORTANT: confidence must be a NUMBER between 0.0 and 1.0 (e.g. 0.95), NOT a word like "high".
 
 Document:
 ---
@@ -62,7 +56,29 @@ Document:
                 raise ValueError(f"Missing key in response: {key}")
 
         state["doc_type"] = result["type"]
-        state["confidence"] = float(result["confidence"])
+
+        # Robust confidence parsing
+        conf = result["confidence"]
+        if isinstance(conf, (int, float)):
+            state["confidence"] = float(conf)
+        elif isinstance(conf, str):
+            conf_lower = conf.lower().strip()
+            if conf_lower in ("high", "very high", "very_high"):
+                state["confidence"] = 0.95
+            elif conf_lower in ("medium", "moderate", "medium_high"):
+                state["confidence"] = 0.75
+            elif conf_lower in ("low", "very low", "very_low"):
+                state["confidence"] = 0.50
+            elif "%" in conf_lower:
+                state["confidence"] = float(conf_lower.replace("%", "").strip()) / 100.0
+            else:
+                try:
+                    state["confidence"] = float(conf_lower)
+                except ValueError:
+                    state["confidence"] = 0.80
+        else:
+            state["confidence"] = 0.80
+
         state["reasoning"] = result["reasoning"]
         state["pipeline_status"] = "classified"
         return state

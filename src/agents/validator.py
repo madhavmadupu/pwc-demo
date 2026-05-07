@@ -22,14 +22,6 @@ class ValidationAgent(BaseAgent):
         super().__init__("Validation")
 
     def execute(self, state: dict) -> dict:
-        """Validate extracted fields against applied company rules.
-
-        Args:
-            state: Pipeline state with 'extracted_fields', 'doc_type', and 'rules_applied'.
-
-        Returns:
-            Updated state with 'validation_result' and 'pipeline_status'.
-        """
         extracted = state["extracted_fields"]
         doc_type = state["doc_type"]
         rules = state["rules_applied"]
@@ -58,7 +50,8 @@ Extracted Data:
 {json.dumps(extracted, indent=2)}
 
 Check: required fields, date validity, amount calculations, completeness.
-Return JSON with keys: is_valid (bool), score (0.0-1.0), checks (list), issues (list), warnings (list)."""
+Return JSON with keys: is_valid (bool), score (0.0-1.0 as a number), checks (list), issues (list), warnings (list).
+IMPORTANT: score must be a NUMBER like 0.95, NOT a word."""
 
         response = client.models.generate_content(
             model=settings.model_name,
@@ -72,6 +65,52 @@ Return JSON with keys: is_valid (bool), score (0.0-1.0), checks (list), issues (
         if not response.text:
             raise ValueError("Empty response from API")
 
-        state["validation_result"] = parse_json_robust(response.text)
+        validation = parse_json_robust(response.text)
+
+        # Robust score parsing
+        score = validation.get("score", 0.0)
+        if isinstance(score, str):
+            score_lower = score.lower().strip()
+            if "%" in score_lower:
+                validation["score"] = float(score_lower.replace("%", "").strip()) / 100.0
+            elif score_lower in ("high", "pass", "passed", "true", "yes"):
+                validation["score"] = 0.95
+            elif score_lower in ("medium", "partial"):
+                validation["score"] = 0.75
+            elif score_lower in ("low", "fail", "failed", "false", "no"):
+                validation["score"] = 0.30
+            else:
+                try:
+                    validation["score"] = float(score_lower)
+                except ValueError:
+                    validation["score"] = 0.50
+        elif isinstance(score, (int, float)):
+            validation["score"] = float(score)
+        else:
+            validation["score"] = 0.50
+
+        # Robust is_valid parsing
+        is_valid = validation.get("is_valid", False)
+        if isinstance(is_valid, str):
+            validation["is_valid"] = is_valid.lower().strip() in ("true", "yes", "pass", "passed")
+        elif isinstance(is_valid, (int, float)):
+            validation["is_valid"] = bool(is_valid)
+        else:
+            validation["is_valid"] = bool(is_valid)
+
+        # Ensure checks is a list
+        checks = validation.get("checks", [])
+        if not isinstance(checks, list):
+            validation["checks"] = [str(checks)]
+        else:
+            validation["checks"] = [str(c) if not isinstance(c, (dict, str)) else c for c in checks]
+
+        # Ensure issues and warnings are lists
+        for key in ("issues", "warnings"):
+            val = validation.get(key, [])
+            if not isinstance(val, list):
+                validation[key] = [str(val)]
+
+        state["validation_result"] = validation
         state["pipeline_status"] = "validated"
         return state
